@@ -12,6 +12,8 @@
 #import "MWPhotoBrowserPrivate.h"
 #import "SDImageCache.h"
 #import "UIImage+MWPhotoBrowser.h"
+#import <AVFoundation/AVFoundation.h>
+#import <AVKit/AVKit.h>
 
 #define PADDING                  10
 
@@ -1172,9 +1174,7 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
     }
     NSUInteger index = [self indexForPlayButton:sender];
     if (index != NSUIntegerMax) {
-        if (!_currentVideoPlayerViewController) {
-            [self playVideoAtIndex:index];
-        }
+        [self playVideoAtIndex:index];
     }
 }
 
@@ -1222,35 +1222,36 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
 }
 
 - (void)_playVideo:(NSURL *)videoURL atPhotoIndex:(NSUInteger)index {
-
+    
     // Setup player
-    _currentVideoPlayerViewController = [[MPMoviePlayerViewController alloc] initWithContentURL:videoURL];
-    [_currentVideoPlayerViewController.moviePlayer prepareToPlay];
-    _currentVideoPlayerViewController.moviePlayer.shouldAutoplay = YES;
-    _currentVideoPlayerViewController.moviePlayer.scalingMode = MPMovieScalingModeAspectFit;
-    _currentVideoPlayerViewController.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
+    AVPlayer* av = [AVPlayer playerWithURL:videoURL];
+    AVPlayerViewController* playerVC = [[AVPlayerViewController alloc] init];
+    playerVC.player = av;
+    playerVC.videoGravity = AVLayerVideoGravityResizeAspect;
+    playerVC.showsPlaybackControls = YES;
+    playerVC.modalPresentationStyle = UIModalPresentationFullScreen;
+    playerVC.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
+    [self presentViewController:playerVC animated:YES completion:^{
+        [playerVC.player play];
+    }];
     
     // Remove the movie player view controller from the "playback did finish" notification observers
     // Observe ourselves so we can get it to use the crossfade transition
-    [[NSNotificationCenter defaultCenter] removeObserver:_currentVideoPlayerViewController
-                                                    name:MPMoviePlayerPlaybackDidFinishNotification
-                                                  object:_currentVideoPlayerViewController.moviePlayer];
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:AVPlayerItemDidPlayToEndTimeNotification
+                                                  object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(videoFinishedCallback:)
-                                                 name:MPMoviePlayerPlaybackDidFinishNotification
-                                               object:_currentVideoPlayerViewController.moviePlayer];
-
-    // Show
-    [self presentViewController:_currentVideoPlayerViewController animated:YES completion:nil];
-
+                                                 name:AVPlayerItemDidPlayToEndTimeNotification
+                                               object:nil];
 }
 
 - (void)videoFinishedCallback:(NSNotification*)notification {
     
     // Remove observer
     [[NSNotificationCenter defaultCenter] removeObserver:self
-                                                    name:MPMoviePlayerPlaybackDidFinishNotification
-                                                  object:_currentVideoPlayerViewController.moviePlayer];
+                                                    name:AVPlayerItemDidPlayToEndTimeNotification
+                                                  object:nil];
     
     // Clear up
     [self clearCurrentVideo];
@@ -1269,9 +1270,7 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
 }
 
 - (void)clearCurrentVideo {
-    [_currentVideoPlayerViewController.moviePlayer stop];
     [_currentVideoLoadingIndicator removeFromSuperview];
-    _currentVideoPlayerViewController = nil;
     _currentVideoLoadingIndicator = nil;
     [[self pageDisplayedAtIndex:_currentVideoIndex] playButton].hidden = NO;
     _currentVideoIndex = NSUIntegerMax;
@@ -1619,6 +1618,7 @@ static void * MWVideoPlayerObservation = &MWVideoPlayerObservation;
             if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"8")) {
                 self.activityViewController.popoverPresentationController.barButtonItem = _actionButton;
             }
+            self.activityViewController.modalPresentationStyle = UIModalPresentationFullScreen;
             [self presentViewController:self.activityViewController animated:YES completion:nil];
 
         }
